@@ -1,7 +1,7 @@
 module Wonders exposing (main)
 
 import Browser
-import Html exposing (Html, div, text, br, ul, li, h2, h3)
+import Html exposing (Html, div, text, br, ul, li, h2, h3, h4)
 import Html exposing (span, input, label, select, option, button)
 import Html.Attributes exposing (style, type_, placeholder, value)
 import Html.Attributes as HA
@@ -23,9 +23,9 @@ type Msg =
          | SetWonder Wonder
          | SetError String
          | Run                    
-         | Simulate
          | GenCivs (List Wonder)
          | GenHands (Era, List CardName)
+         | Simulate (List Int)
 
 --the summary of a series of games
 type alias Model = { player      : Civ
@@ -44,6 +44,9 @@ type alias Outcome = { win       : Bool
 
 allWonders : List Wonder
 allWonders = [Alexandria, Babylon, Rhodes, Olympus, Halicarnassus, Gyza, Ephesus]
+
+allEras : List Era
+allEras = [One, Two, Three]
 
 --start the simulator
 main = Browser.element { init = initialize
@@ -78,23 +81,13 @@ update msg model =
    Run -> ({model | results = [], hands = []}
           , shuffleWonders model.player.wonder
           )
-
-   Simulate -> (model, Cmd.none)
  
    --adds the AI civilizations to the model, triggers "GenHands"
    GenCivs wonders -> let 
-                       compCivs = createAI (model.players - 1) wonders
-
-                       --TODO remove, just for debugging
-                       outcome = { win = False
-                                 , playerCiv = model.player
-                                 , compCivs = compCivs
-                                 }
-
-                       newOutcomes = (outcome :: model.results)
+                        compCivs = createAI (model.players - 1) wonders
                       in
                       (
-                       {model | comps = compCivs, results = newOutcomes}
+                       {model | comps = compCivs}
 
                        --go through the eras in reverse order
                        , shuffleCards model.players Three 
@@ -108,11 +101,40 @@ update msg model =
                      in
                      (
                        newModel 
+
+                       --go through the eras in reverse order so that
+                       --the "prepending" on the "hands" list
+                       --results in the correct order
                        , case era of
                               Three -> shuffleCards model.players Two
                               Two   -> shuffleCards model.players One
-                              One   -> Cmd.none
+                              One   -> createChoices model.players
                      )
+
+   --adds the random AI choices to the model
+   Simulate choices -> let --TODO need to go back to "GenHands"
+                           
+                         --TODO remove, just for debugging
+                         outcome = { win = False
+                                   , playerCiv = model.player
+                                   , compCivs = model.comps
+                                   }
+
+                         newOutcomes = (outcome :: model.results)
+                        
+                         sims = model.simulations - 1
+                       in
+                       ({model | results = newOutcomes, simulations= sims}
+                       , 
+                         --if there are more simulations to run
+                         --generate new random choices for the AIs
+                         --and start again
+                         if model.simulations > 1 then
+                            createChoices model.players
+                         else
+                            Cmd.none
+                       )
+   
 
 
 --shuffles all the wonders besides the given wonder
@@ -146,6 +168,18 @@ createHands cards =
 split : Int -> List a -> (List a, List a)
 split n values = (List.take n values, List.drop n values)
 
+--generates a series of random choices long enough for every player
+--in every era
+createChoices : Int -> Cmd Msg
+createChoices numPlayers =
+   let
+      --need players x eras x cards choices
+      --the starting hand size is the same as the number of rounds
+      numChoices = numPlayers * (List.length allEras) * (startingHandSize + 1)
+      choices = Random.list numChoices (Random.int 0 startingHandSize)
+   in
+      Random.generate Simulate choices
+
 --create the initial model
 initialize : () -> (Model, Cmd Msg)
 initialize _ = (default, Cmd.none)
@@ -154,7 +188,7 @@ initialize _ = (default, Cmd.none)
 view : Model -> Html Msg
 view state = 
    let
-      results = List.map displayOutcome state.results
+      results = List.map (\(i,o) -> displayOutcome i o) (zipIndex state.results)
       red = style "color" "red"
       margin = style "margin" "2px"
    in
@@ -168,6 +202,15 @@ view state =
         ++ (printHand state.hands)
         ++ results
       )
+
+--zips the list with its index
+zipIndex : List a -> List (Int, a)
+zipIndex values =
+   let
+      indexes = List.range 1 (List.length values)
+   in
+      List.map2 Tuple.pair indexes values
+
 
 --TODO remove debug function
 printHand : List (Era, List Hand) -> List (Html Msg)
@@ -200,7 +243,7 @@ makeForm model =
                    HA.min "1", HA.max "1000"] []],
 
          label [] [wText "    Wonder  ", 
-            select [margin] wonderOps],
+            select [margin, onInput setWonder] wonderOps],
 
          button [margin, onClick (checkRun model)] [text "Start"]
       ]
@@ -260,13 +303,16 @@ checkRun model =
       SetError "Either/both players and simulations is incorrect"
         
 --display a game's outcome
-displayOutcome : Outcome -> Html Msg
-displayOutcome gameResult = 
+displayOutcome : Int -> Outcome -> Html Msg
+displayOutcome simNum gameResult = 
    let
        others = List.map (displayCiv Nothing) gameResult.compCivs
        displayPlayer = displayCiv (Just gameResult.win)
    in
-      div [] ([displayPlayer gameResult.playerCiv] ++ others)
+      div [] 
+          ([ h3 [] [text ("Game " ++ String.fromInt simNum)],
+            displayPlayer gameResult.playerCiv] 
+            ++ others)
 
 --Generates HTML/CSS to display a player/AI civ
 displayCiv : Maybe Bool -> Civ -> Html Msg
@@ -287,7 +333,7 @@ displayCiv maybeWon civ =
    in
       div [background, border, pad, margin] 
       ([
-         h3 [] [text title],
+         h4 [] [text title],
          span [margin] [text (showField "Money" civ.money)],
          span [] [text ", "],
          span [margin] [text (showField "Stages" civ.finishedStages)],
