@@ -1,4 +1,4 @@
-module Rules exposing ( Civ, Wonder(..), Resource(..), Color(..), Discovery(..), CardName(..), BattleOutcome(..), Science(..), Production(..), Era(..), Hand, cardColor, cardCost, cardUpgrades, cardProduces, cardScores, cardName, initCiv, createAI, createCards, startingHandSize)
+module Rules exposing ( Civ, Wonder(..), Resource(..), Color(..), Discovery(..), CardName(..), BattleOutcome(..), Science(..), Production(..), Era(..), Hand, cardColor, cardCost, cardUpgrades, cardProduces, cardScores, cardName, initCiv, createAI, scoreCiv, createCards, startingHandSize)
 
 startingMoney = 3
 startingHandSize = 7
@@ -79,7 +79,7 @@ scoreCiv civ left right =
        battleScore = List.sum (List.map scoreBattle civ.battles)
        sciScore    = scoreScience civ
    in
-      baseScore + battleScore + sciScore
+       baseScore + battleScore + sciScore
 
 --TODO double check that replacing all the science choices
 --with the same option is optimal
@@ -106,7 +106,7 @@ scoreScience player =
    in
       --if there is a choice, try all three
       if List.member DiscoveryChoice science then
-         case List.minimum options of
+         case List.maximum options of
             Just score -> score
             _          -> 0   --will never happen
       else
@@ -116,9 +116,9 @@ scoreScience player =
 scoreDiscoveries : List Discovery -> Int
 scoreDiscoveries sci = 
    let
-      gears   = countDiscovery sci Gear
-      comps   = countDiscovery sci Compass
-      tablets = countDiscovery sci Tablet
+      gears   = countDiscovery Gear sci 
+      comps   = countDiscovery Compass sci 
+      tablets = countDiscovery Tablet sci 
    in
       List.sum [gears * gears, comps * comps, tablets * tablets]
       + (7 * (Maybe.withDefault 0 (List.minimum [gears, comps, tablets])))
@@ -267,10 +267,8 @@ cardProduces : Civ -> Civ -> Civ -> CardName -> Maybe Production
 cardProduces playerCiv left right card  = 
    
    let 
-       numYellow      = countYellow playerCiv.cards
        numBrown       = countBrown playerCiv.cards
        numGrey        = countGrey playerCiv.cards
-       adjNumYellow   = (countYellow left.cards) + (countYellow right.cards)
        adjNumBrown    = (countBrown left.cards) + (countBrown right.cards)
        adjNumGrey     = (countGrey left.cards) + (countGrey right.cards)
    in
@@ -651,8 +649,8 @@ countLosses civ = List.length (List.filter (\c -> c == Loss) civ.battles)
 
 --determine the number of cards of a given color
 countColor : Color -> List CardName-> Int
-countColor color hand =
-   List.length (List.filter (\c -> c == color) (List.map cardColor hand))
+countColor color =
+   (List.map cardColor) >> (List.filter (\c -> c == color)) >> List.length
 
 
 --specific counting functions
@@ -665,6 +663,5 @@ countGreen     = countColor Green
 countRed       = countColor Red
 
 --counts a the instances of a given discovery
-countDiscovery : List Discovery -> Discovery -> Int
-countDiscovery collection target =
-   List.length (List.filter (\d -> d == target) collection)
+countDiscovery : Discovery -> List Discovery -> Int
+countDiscovery target = List.filter (\d -> d == target) >> List.length
