@@ -11,8 +11,7 @@ import Random exposing (generate)
 import Random.List exposing (shuffle)
 
 import Rules exposing (Civ, CardName, Color(..), Wonder(..), CardName(..))
-import Rules exposing (BattleOutcome(..), Science(..), Discovery(..))
-import Rules exposing (Resource(..), Production(..), Era(..), Hand)
+import Rules exposing (Era(..), Hand)
 import Rules exposing (cardColor, cardName, initCiv, startingHandSize)
 import Rules exposing (createAI, createCards)
 
@@ -31,6 +30,7 @@ type Msg =
 type alias Model = { player      : Civ
                    , comps       : List Civ
                    , hands       : List (Era, List Hand)
+                   , currentSim  : Int
                    , simulations : Int
                    , players     : Int
                    , results     : List Outcome
@@ -78,7 +78,7 @@ update msg model =
    SetError errMsg -> ({model | error = errMsg}, Cmd.none)
 
    --Starts the simulation, generates other civs, trigger "GenCivs"
-   Run -> ({model | results = [], hands = []}
+   Run -> ({model | results = [], hands = [], currentSim = 1}
           , shuffleWonders model.player.wonder
           )
  
@@ -112,7 +112,7 @@ update msg model =
                      )
 
    --adds the random AI choices to the model
-   Simulate choices -> let --TODO need to go back to "GenHands"
+   Simulate choices -> let 
                            
                          --TODO remove, just for debugging
                          outcome = { win = False
@@ -122,20 +122,22 @@ update msg model =
 
                          newOutcomes = (outcome :: model.results)
                         
-                         sims = model.simulations - 1
+                         sims = model.currentSim + 1
                        in
-                       ({model | results = newOutcomes, simulations= sims}
+                       ({model | 
+                           results = newOutcomes, 
+                           currentSim = sims, 
+                           hands=[]}  --reset the hands before shuffle
                        , 
                          --if there are more simulations to run
                          --generate new random choices for the AIs
                          --and start again
-                         if model.simulations > 1 then
-                            createChoices model.players
+                         if model.currentSim < model.simulations then
+                            shuffleCards model.players Three
                          else
                             Cmd.none
                        )
    
-
 
 --shuffles all the wonders besides the given wonder
 --creates Cmd Msg
@@ -385,6 +387,7 @@ showColor color = case color of
    Yellow     -> "lightyellow"
    Grey       -> "lightgrey"
 
+
 ---------------------Defaults/Example Code--------------------
 --TODO specify some starting values for development etc
 exampleCiv : Civ
@@ -433,6 +436,7 @@ default = { player = defaultCiv
           , hands = []
           , players = 0
           , simulations = 0
+          , currentSim = 0
           , results = defaultOutcomes
           , error   = ""
           }

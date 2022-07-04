@@ -68,6 +68,68 @@ type CardName = LumberYard | OreVein | ClayPool | StonePit | TimberYard
               | ScientistsGuild | SpiesGuild | StrategistsGuild
               | ArchitectsGuild | GamersGuild
 
+
+--TODO each wonder/civ needs abilities
+
+--score a civilization TODO
+scoreCiv : Civ -> Civ -> Civ -> Int
+scoreCiv civ left right =
+   let
+       baseScore   = List.sum (List.map (cardScores civ left right) civ.cards)
+       battleScore = List.sum (List.map scoreBattle civ.battles)
+       sciScore    = scoreScience civ
+   in
+      baseScore + battleScore + sciScore
+
+--TODO double check that replacing all the science choices
+--with the same option is optimal
+scoreScience : Civ -> Int
+scoreScience player =
+   let
+      --get single discoveries
+      getSingle d = case d of
+                       Single s -> Just s
+                       _        -> Nothing
+
+      --replace choices with a discover type
+      replace choice dis = case dis of 
+                              Single s -> s
+                              _        -> choice
+
+      --get all the science
+      science = List.filterMap cardScience player.cards
+
+      --try a replacement option
+      try choice = scoreDiscoveries (List.map (replace choice) science)
+
+      options = [try Gear, try Tablet, try Compass]
+   in
+      --if there is a choice, try all three
+      if List.member DiscoveryChoice science then
+         case List.minimum options of
+            Just score -> score
+            _          -> 0   --will never happen
+      else
+         scoreDiscoveries (List.filterMap getSingle science)
+
+--scores a list of discoveries
+scoreDiscoveries : List Discovery -> Int
+scoreDiscoveries sci = 
+   let
+      gears   = countDiscovery sci Gear
+      comps   = countDiscovery sci Compass
+      tablets = countDiscovery sci Tablet
+   in
+      List.sum [gears * gears, comps * comps, tablets * tablets]
+      + (7 * (Maybe.withDefault 0 (List.minimum [gears, comps, tablets])))
+
+--scores a battle
+scoreBattle : BattleOutcome -> Int
+scoreBattle battle = 
+   case battle of
+      Win points -> points
+      _          -> -1
+
 --initialize civilization, starts with default values
 initCiv : String -> Wonder -> Civ
 initCiv name wonder = Civ [] name wonder 0 startingMoney []
@@ -294,9 +356,9 @@ cardStrength card = case card of
    _                       -> 0
 
 
---determines which discoveries the card produces
-cardDiscoveries : CardName -> Maybe Science
-cardDiscoveries card = case card of
+--determines which science discoveries the card produces
+cardScience : CardName -> Maybe Science
+cardScience card = case card of
    Apothecary              -> Just (Single Compass)
    Workshop                -> Just (Single Gear)
    Scriptorium             -> Just (Single Tablet)
@@ -601,3 +663,8 @@ countBlue      = countColor Blue
 countPurple    = countColor Purple
 countGreen     = countColor Green
 countRed       = countColor Red
+
+--counts a the instances of a given discovery
+countDiscovery : List Discovery -> Discovery -> Int
+countDiscovery collection target =
+   List.length (List.filter (\d -> d == target) collection)
